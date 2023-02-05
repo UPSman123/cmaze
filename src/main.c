@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define MAZE_SIZE 100
+#define MAZE_SIZE 101
 
 char maze[MAZE_SIZE][MAZE_SIZE];
 
@@ -16,6 +16,10 @@ typedef struct MazeGen {
   Coord stack[MAZE_SIZE * MAZE_SIZE];
 } MazeGen;
 MazeGen maze_gen;
+
+int is_alive(int x, int y) {
+  return maze[x][y];
+}
 
 void iter_maze_gen() {
   Coord neighbors[4];
@@ -45,7 +49,8 @@ void iter_maze_gen() {
       int n1_y = neighbors[i].y + cur.y;
       if (n1_x < 0 || n1_x >= MAZE_SIZE || //
           n1_y < 0 || n1_y >= MAZE_SIZE || //
-          maze[n1_x][n1_y]) {
+          (n1_x % 2 && n1_y % 2) || //
+          is_alive(n1_x, n1_y)) {
         continue;
       }
       int can_turn = 1;
@@ -54,7 +59,7 @@ void iter_maze_gen() {
         int n2_y = neighbors[j].y + n1_y;
         if (n2_x >= 0 && n2_x < MAZE_SIZE && //
             n2_y >= 0 && n2_y < MAZE_SIZE && //
-            maze[n2_x][n2_y] && (n2_x != cur.x || n2_y != cur.y)) {
+            is_alive(n2_x, n2_y) && (n2_x != cur.x || n2_y != cur.y)) {
           can_turn = 0;
         }
       }
@@ -85,7 +90,9 @@ int main(void) {
   InitWindow(MAZE_SIZE * 8, MAZE_SIZE * 8, "Maze");
   SetTargetFPS(60);
   while (!WindowShouldClose() && !IsKeyPressed(KEY_Q)) {
-    iter_maze_gen();
+
+    for (int i = 0; i < 10; i++)
+      iter_maze_gen();
 
     BeginDrawing();
     ClearBackground(RAYWHITE);
@@ -94,7 +101,7 @@ int main(void) {
     for (int i = 0; i < MAZE_SIZE; i++) {
       for (int j = 0; j < MAZE_SIZE; j++) {
         Color c = BLACK;
-        if (maze[i][j]) {
+        if (is_alive(i, j)) {
           c = WHITE;
         }
         DrawRectangle(i * 8, j * 8, 8, 8, c);
@@ -103,7 +110,9 @@ int main(void) {
 
     for (int i = 0; i < maze_gen.stack_size; i++) {
       Coord coord = maze_gen.stack[i];
-      DrawRectangle(coord.x * 8, coord.y * 8, 8, 8, GREEN);
+      int a = i * 255 / (maze_gen.stack_size - 1);
+      Color c = {0, a, 255 - a, 255};
+      DrawRectangle(coord.x * 8, coord.y * 8, 8, 8, c);
     }
 
     EndDrawing();
