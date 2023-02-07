@@ -9,7 +9,7 @@
 #define MAX_ALIVE_VAL ((int)(MAZE_SIZE * 0.32))
 #define STACK_SIZE (MAX_ALIVE_VAL + 1)
 #define RAT_TRAIL_LENGTH 50
-#define SPEED 5
+#define SPEED 10
 
 unsigned int maze[MAZE_WIDTH][MAZE_HEIGHT];
 
@@ -85,17 +85,38 @@ void iter_maze_gen() {
           is_alive(n1_x, n1_y)) {
         continue;
       }
-      int can_turn = 1;
+      int can_move = 1;
       for (int j = 0; j < 4; j++) {
         int n2_x = neighbors[j].x + n1_x;
         int n2_y = neighbors[j].y + n1_y;
-        if (n2_x >= 0 && n2_x < MAZE_WIDTH &&  //
-            n2_y >= 0 && n2_y < MAZE_HEIGHT && //
-            is_alive(n2_x, n2_y) && (n2_x != cur.x || n2_y != cur.y)) {
-          can_turn = 0;
+        if (n2_x >= 0 && n2_x < MAZE_WIDTH &&   //
+            n2_y >= 0 && n2_y < MAZE_HEIGHT &&  //
+            (n2_x != cur.x || n2_y != cur.y) && //
+            is_alive(n2_x, n2_y)) {
+          can_move = 0;
+          break;
         }
       }
-      if (!can_turn) {
+      if (neighbors[i].x) {
+        // It's a horizontal move.
+        int diagonal_x = n1_x + neighbors[i].x;
+        if (diagonal_x >= 0 && diagonal_x < MAZE_WIDTH) {
+          if (is_alive(diagonal_x, n1_y + 1) ||
+              is_alive(diagonal_x, n1_y - 1)) {
+            can_move = 0;
+          }
+        }
+      } else {
+        // It's a vertical move.
+        int diagonal_y = n1_y + neighbors[i].y;
+        if (diagonal_y >= 0 && diagonal_y < MAZE_HEIGHT) {
+          if (is_alive(n1_x + 1, diagonal_y) ||
+              is_alive(n1_x - 1, diagonal_y)) {
+            can_move = 0;
+          }
+        }
+      }
+      if (!can_move) {
         continue;
       }
       maze[n1_x][n1_y] = maze_gen.iter_cnt + MAX_ALIVE_VAL;
@@ -155,6 +176,8 @@ int main(void) {
   srand(seed);
 
   Coord center = {MAZE_WIDTH / 2, MAZE_HEIGHT / 2};
+  center.x += center.x % 2;
+  center.y += center.y % 2;
 
   maze_gen.stack_start = 0;
   maze_gen.stack_end = 0;
@@ -168,7 +191,7 @@ int main(void) {
 
   InitWindow(MAZE_WIDTH * 8 + 8, MAZE_HEIGHT * 8, "Maze");
   HideCursor();
-  SetTargetFPS(60);
+  SetTargetFPS(30);
   while (!WindowShouldClose() && !IsKeyPressed(KEY_Q)) {
 
     for (int i = 0; i < SPEED; i++) {
