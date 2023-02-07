@@ -8,6 +8,7 @@
 #define MAZE_SIZE (MAZE_WIDTH * MAZE_HEIGHT)
 #define MAX_ALIVE_VAL ((int)(MAZE_SIZE * 0.32))
 #define STACK_SIZE (MAX_ALIVE_VAL + 1)
+#define RAT_TRAIL_LENGTH 50
 #define SPEED 5
 
 unsigned int maze[MAZE_WIDTH][MAZE_HEIGHT];
@@ -24,13 +25,14 @@ typedef struct MazeGen {
 } MazeGen;
 MazeGen maze_gen;
 
-int alive_value(int x, int y) {
-  return (int)(maze[x][y] - maze_gen.iter_cnt);
-}
+typedef struct MazeRat {
+  Coord trail[RAT_TRAIL_LENGTH];
+} MazeRat;
+MazeRat maze_rat;
 
-int is_alive(int x, int y) {
-  return alive_value(x, y) > 0;
-}
+int alive_value(int x, int y) { return (int)(maze[x][y] - maze_gen.iter_cnt); }
+
+int is_alive(int x, int y) { return alive_value(x, y) > 0; }
 
 void push(int x, int y) {
   Coord coord = {x, y};
@@ -56,24 +58,19 @@ Coord peek(void) {
   return maze_gen.stack[maze_gen.stack_end - 1];
 }
 
-void iter_maze_gen() {
-  Coord neighbors[4];
-  neighbors[0].x = -1;
-  neighbors[0].y = 0;
-  neighbors[1].x = 1;
-  neighbors[1].y = 0;
-  neighbors[2].x = 0;
-  neighbors[2].y = -1;
-  neighbors[3].x = 0;
-  neighbors[3].y = 1;
-
-  // Shuffle neighbors
+Coord __neighbors[4] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+Coord *rand_neighbors() {
   for (int i = 0; i < 3; i++) {
     int j = rand() % (4 - i) + i;
-    Coord temp = neighbors[i];
-    neighbors[i] = neighbors[j];
-    neighbors[j] = temp;
+    Coord temp = __neighbors[i];
+    __neighbors[i] = __neighbors[j];
+    __neighbors[j] = temp;
   }
+  return __neighbors;
+}
+
+void iter_maze_gen() {
+  Coord *neighbors = rand_neighbors();
 
   int done = 0;
   while (!done && maze_gen.stack_end != maze_gen.stack_start) {
@@ -82,9 +79,9 @@ void iter_maze_gen() {
     for (int i = 0; i < 4; i++) {
       int n1_x = neighbors[i].x + cur.x;
       int n1_y = neighbors[i].y + cur.y;
-      if (n1_x < 0 || n1_x >= MAZE_WIDTH || //
+      if (n1_x < 0 || n1_x >= MAZE_WIDTH ||  //
           n1_y < 0 || n1_y >= MAZE_HEIGHT || //
-          (n1_x % 2 && n1_y % 2) || //
+          (n1_x % 2 && n1_y % 2) ||          //
           is_alive(n1_x, n1_y)) {
         continue;
       }
@@ -92,7 +89,7 @@ void iter_maze_gen() {
       for (int j = 0; j < 4; j++) {
         int n2_x = neighbors[j].x + n1_x;
         int n2_y = neighbors[j].y + n1_y;
-        if (n2_x >= 0 && n2_x < MAZE_WIDTH && //
+        if (n2_x >= 0 && n2_x < MAZE_WIDTH &&  //
             n2_y >= 0 && n2_y < MAZE_HEIGHT && //
             is_alive(n2_x, n2_y) && (n2_x != cur.x || n2_y != cur.y)) {
           can_turn = 0;
@@ -129,25 +126,55 @@ void iter_maze_gen() {
   maze_gen.iter_cnt++;
 }
 
+void iter_maze_rat() {
+  Coord head = maze_rat.trail[RAT_TRAIL_LENGTH - 1];
+  Coord prev = maze_rat.trail[RAT_TRAIL_LENGTH - 2];
+  Coord *neighbors = rand_neighbors();
+  Coord next = prev;
+  for (int i = 0; i < 4; i++) {
+    int n_x = head.x + neighbors[i].x;
+    int n_y = head.y + neighbors[i].y;
+    if (n_x < 0 || n_x >= MAZE_WIDTH ||     //
+        n_y < 0 || n_y >= MAZE_HEIGHT ||    //
+        (n_x == prev.x && n_y == prev.y) || //
+        alive_value(n_x, n_y) <= RAT_TRAIL_LENGTH)
+      continue;
+    next.x = n_x;
+    next.y = n_y;
+  }
+
+  for (int i = 0; i < RAT_TRAIL_LENGTH - 1; i++)
+    maze_rat.trail[i] = maze_rat.trail[i + 1];
+  maze_rat.trail[RAT_TRAIL_LENGTH - 1] = next;
+}
+
 int main(void) {
   int seed = time(NULL);
   // int seed = 1675591889;
   printf("seed: %d\n", seed);
   srand(seed);
+
+  Coord center = {MAZE_WIDTH / 2, MAZE_HEIGHT / 2};
+
   maze_gen.stack_start = 0;
   maze_gen.stack_end = 0;
-  push(MAZE_WIDTH / 2, MAZE_HEIGHT / 2);
-  maze[MAZE_WIDTH / 2][MAZE_HEIGHT / 2] = MAX_ALIVE_VAL;
+  push(center.x, center.y);
+  maze[center.x][center.y] = MAX_ALIVE_VAL;
   printf("start pos %d %d\n", maze_gen.stack[0].x, maze_gen.stack[0].y);
   maze_gen.iter_cnt = 0;
+
+  for (int i = 0; i < RAT_TRAIL_LENGTH; i++)
+    maze_rat.trail[i] = center;
 
   InitWindow(MAZE_WIDTH * 8 + 8, MAZE_HEIGHT * 8, "Maze");
   HideCursor();
   SetTargetFPS(60);
   while (!WindowShouldClose() && !IsKeyPressed(KEY_Q)) {
 
-    for (int i = 0; i < SPEED; i++)
+    for (int i = 0; i < SPEED; i++) {
       iter_maze_gen();
+      iter_maze_rat();
+    }
 
     // exit(0);
 
@@ -160,13 +187,14 @@ int main(void) {
         int a = alive_value(i, j);
         if (a <= 0)
           continue;
-        a = a * 255 / MAX_ALIVE_VAL;
+#define LOW_COLOR 20
+        a = a * (255 - LOW_COLOR) / MAX_ALIVE_VAL + LOW_COLOR;
         Color c = {a, a, a, 255};
         DrawRectangle(i * 8 + 4, j * 8, 8, 8, c);
       }
     }
 
-    //if (maze_gen.stack_end == maze_gen.stack_start)
+    // if (maze_gen.stack_end == maze_gen.stack_start)
     int stack_size = maze_gen.stack_end - maze_gen.stack_start;
     if (stack_size > STACK_SIZE)
       stack_size -= STACK_SIZE;
@@ -178,6 +206,11 @@ int main(void) {
       int a = i * 255 / (stack_size - 1);
       Color c = {0, a, 255 - a, 255};
       DrawRectangle(coord.x * 8 + 4, coord.y * 8, 8, 8, c);
+    }
+
+    for (int i = 0; i < RAT_TRAIL_LENGTH; i++) {
+      Coord coord = maze_rat.trail[i];
+      DrawRectangle(coord.x * 8 + 4, coord.y * 8, 8, 8, RED);
     }
 
     EndDrawing();
