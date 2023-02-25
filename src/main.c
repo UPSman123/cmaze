@@ -6,12 +6,13 @@
 #define MAZE_WIDTH 239
 #define MAZE_HEIGHT 135
 #define MAZE_SIZE (MAZE_WIDTH * MAZE_HEIGHT)
-#define MAX_ALIVE_VAL ((int)(MAZE_SIZE * 0.32))
-#define STACK_SIZE (MAX_ALIVE_VAL + 1)
+#define MAX_ALIVE_VAL ((int)(MAZE_SIZE * 0.15))
+// #define MAX_ALIVE_VAL ((int)(MAZE_SIZE * 0.05))
 #define RAT_TRAIL_LENGTH 50
-#define SPEED 10
+#define SPEED 300
 
-unsigned int maze[MAZE_WIDTH][MAZE_HEIGHT];
+unsigned int live_map[MAZE_WIDTH][MAZE_HEIGHT] = {0};
+unsigned int iter_cnt = 0;
 
 typedef struct Coord {
   int x, y;
@@ -21,7 +22,6 @@ typedef struct MazeGen {
   int stack_start;
   int stack_end;
   Coord stack[MAZE_SIZE];
-  unsigned int iter_cnt;
 } MazeGen;
 MazeGen maze_gen;
 
@@ -30,32 +30,51 @@ typedef struct MazeRat {
 } MazeRat;
 MazeRat maze_rat;
 
-int alive_value(int x, int y) { return (int)(maze[x][y] - maze_gen.iter_cnt); }
+int alive_value(int x, int y) {
+  int value = (int)(live_map[x][y] - iter_cnt);
+  if (live_map[x][y] & 0x80000000)
+    value = MAX_ALIVE_VAL;
+  return value;
+}
 
 int is_alive(int x, int y) { return alive_value(x, y) > 0; }
 
 void push(int x, int y) {
   Coord coord = {x, y};
   maze_gen.stack[maze_gen.stack_end++] = coord;
-  if (maze_gen.stack_end == STACK_SIZE)
+  if (maze_gen.stack_end == MAX_ALIVE_VAL + 1)
     maze_gen.stack_end = 0;
   if (maze_gen.stack_end == maze_gen.stack_start)
     maze_gen.stack_start++;
-  if (maze_gen.stack_start == STACK_SIZE)
+  if (maze_gen.stack_start == MAX_ALIVE_VAL + 1)
     maze_gen.stack_start = 0;
 }
 
-void pop(void) {
+void pop_head(void) {
   if (maze_gen.stack_end == 0)
-    maze_gen.stack_end = STACK_SIZE - 1;
+    maze_gen.stack_end = MAX_ALIVE_VAL;
   else
     maze_gen.stack_end--;
 }
 
+void pop_tail(void) {
+    if (maze_gen.stack_start == MAX_ALIVE_VAL)
+        maze_gen.stack_start = 0;
+    else
+        maze_gen.stack_start++;
+}
+
 Coord peek(void) {
   if (maze_gen.stack_end == 0)
-    return maze_gen.stack[STACK_SIZE - 1];
+    return maze_gen.stack[MAX_ALIVE_VAL];
   return maze_gen.stack[maze_gen.stack_end - 1];
+}
+
+unsigned int stack_size(void) {
+    int stack_size = maze_gen.stack_end - maze_gen.stack_start;
+    if (stack_size < 0)
+        stack_size += MAX_ALIVE_VAL + 1;
+    return stack_size;
 }
 
 Coord __neighbors[4] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
@@ -75,6 +94,12 @@ void iter_maze_gen() {
   int done = 0;
   while (!done && maze_gen.stack_end != maze_gen.stack_start) {
     Coord cur = peek();
+
+    if (stack_size() == MAX_ALIVE_VAL) {
+      Coord last = maze_gen.stack[maze_gen.stack_start];
+      live_map[last.x][last.y] = iter_cnt + MAX_ALIVE_VAL;
+      pop_tail();
+    }
 
     for (int i = 0; i < 4; i++) {
       int n1_x = neighbors[i].x + cur.x;
@@ -119,32 +144,32 @@ void iter_maze_gen() {
       if (!can_move) {
         continue;
       }
-      maze[n1_x][n1_y] = maze_gen.iter_cnt + MAX_ALIVE_VAL;
+
+      // Add the new coordinates to to maze.
+      live_map[n1_x][n1_y] = iter_cnt + 0x80000000;
       push(n1_x, n1_y);
       done = 1;
       break;
     }
-    if (!done)
-      pop();
+    if (!done) {
+      live_map[cur.x][cur.y] = iter_cnt + MAX_ALIVE_VAL;
+      pop_head();
+    }
   }
 
   // Remove dead cells in stack.
-  int stack_size = maze_gen.stack_end - maze_gen.stack_start;
-  if (stack_size < 0)
-    stack_size += STACK_SIZE;
-  else if (stack_size >= STACK_SIZE)
-    stack_size -= STACK_SIZE;
-  for (int i = 0; i < stack_size; i++) {
+  int size = stack_size();
+  for (int i = 0; i < size; i++) {
     int idx = i + maze_gen.stack_start;
-    if (idx > STACK_SIZE)
-      idx -= STACK_SIZE;
+    if (idx > MAX_ALIVE_VAL)
+      idx -= MAX_ALIVE_VAL;
     Coord coord = maze_gen.stack[idx];
     if (is_alive(coord.x, coord.y))
       break;
     maze_gen.stack_start++;
   }
 
-  maze_gen.iter_cnt++;
+  iter_cnt++;
 }
 
 void iter_maze_rat() {
@@ -182,9 +207,8 @@ int main(void) {
   maze_gen.stack_start = 0;
   maze_gen.stack_end = 0;
   push(center.x, center.y);
-  maze[center.x][center.y] = MAX_ALIVE_VAL;
+  live_map[center.x][center.y] = 0x80000000;
   printf("start pos %d %d\n", maze_gen.stack[0].x, maze_gen.stack[0].y);
-  maze_gen.iter_cnt = 0;
 
   for (int i = 0; i < RAT_TRAIL_LENGTH; i++)
     maze_rat.trail[i] = center;
@@ -217,16 +241,11 @@ int main(void) {
       }
     }
 
-    // if (maze_gen.stack_end == maze_gen.stack_start)
-    int stack_size = maze_gen.stack_end - maze_gen.stack_start;
-    if (stack_size > STACK_SIZE)
-      stack_size -= STACK_SIZE;
-    else if (stack_size < 0)
-      stack_size += STACK_SIZE;
-    for (int i = 0; i < stack_size; i++) {
-      int idx = (maze_gen.stack_start + i) % STACK_SIZE;
+    int size = stack_size();
+    for (int i = 0; i < size; i++) {
+      int idx = (maze_gen.stack_start + i) % (MAX_ALIVE_VAL + 1);
       Coord coord = maze_gen.stack[idx];
-      int a = i * 255 / (stack_size - 1);
+      int a = i * 255 / (size - 1);
       Color c = {0, a, 255 - a, 255};
       DrawRectangle(coord.x * 8 + 4, coord.y * 8, 8, 8, c);
     }
